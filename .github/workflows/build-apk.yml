@@ -1,0 +1,98 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Works both with a normal project in the repo root and with a ZIP uploaded to the repo
+      - name: Find project (unzip if needed)
+        run: |
+          if [ -f settings.gradle.kts ]; then
+            DIR="."
+          else
+            ZIP=$(find . -maxdepth 2 -iname "*.zip" -not -path "./.git/*" | head -n 1)
+            if [ -z "$ZIP" ]; then echo "Project not found: upload the project files or the ZIP"; exit 1; fi
+            mkdir -p /tmp/proj
+            unzip -q "$ZIP" -d /tmp/proj
+            DIR=$(dirname "$(find /tmp/proj -name settings.gradle.kts | head -n 1)")
+          fi
+          echo "Project dir: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
+      # AGP 8.7.3 needs JDK 17
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # compileSdk / targetSdk = 35 (see app/build.gradle.kts)
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
+
+      # Gradle 8.9 = version required by AGP 8.7.3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      # gradle-wrapper.jar is binary; generate the official one if it is missing
+      - name: Ensure Gradle wrapper
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            mkdir -p /tmp/wrapgen
+            (cd /tmp/wrapgen && gradle wrapper --gradle-version 8.9 --distribution-type bin --no-daemon)
+            mkdir -p gradle/wrapper
+            cp /tmp/wrapgen/gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.jar
+          fi
+          chmod +x gradlew
+          ./gradlew --version
+
+      - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Find APK and rename
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" -path "*/debug/*" ! -name "*unaligned*" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "APK not found"
+            find "$PROJECT_DIR" -name "*.apk"
+            exit 1
+          fi
+          echo "Found: $APK"
+          cp "$APK" "$GITHUB_WORKSPACE/LyfeStyleMusic.apk"
+          ls -lh "$GITHUB_WORKSPACE/LyfeStyleMusic.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LyfeStyleMusic-APK
+          path: LyfeStyleMusic.apk
+          if-no-files-found: error
+
+      - name: Upload build reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            ${{ env.PROJECT_DIR }}/app/build/reports
+          if-no-files-found: ignore
