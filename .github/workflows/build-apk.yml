@@ -9,11 +9,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Works both with a normal project in the repo root and with a ZIP uploaded to the repo
       - name: Find project (unzip if needed)
@@ -32,19 +32,28 @@ jobs:
 
       # AGP 8.7.3 needs JDK 17
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # The runner already has the Android SDK; we only add the needed packages.
       # compileSdk / targetSdk = 35 (see app/build.gradle.kts)
-      - name: Install SDK packages
+      - name: Set up Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SM" ]; then
+            echo "sdkmanager not found, downloading command-line tools"
+            mkdir -p "$SDK/cmdline-tools"
+            curl -sSLo /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
+            mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+          fi
+          yes | "$SM" --licenses > /dev/null || true
+          "$SM" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
       # Gradle 8.9 = version required by AGP 8.7.3
       - name: Set up Gradle
