@@ -67,7 +67,7 @@ jobs:
         run: |
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
             mkdir -p /tmp/wrapgen
-            (cd /tmp/wrapgen && gradle wrapper --gradle-version 8.9 --distribution-type bin --no-daemon)
+            (cd /tmp/wrapgen && touch settings.gradle && gradle wrapper --gradle-version 8.9 --distribution-type bin --no-daemon)
             mkdir -p gradle/wrapper
             cp /tmp/wrapgen/gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.jar
           fi
