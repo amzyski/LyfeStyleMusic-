@@ -75,33 +75,22 @@ jobs:
           ./gradlew --version
 
       - name: Build debug APK
+        shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log || {
+            echo ""
+            echo "=================== COMPILE ERRORS ==================="
+            grep -E "^e: " build.log | head -30 || true
+            echo "=================== WHAT WENT WRONG =================="
+            grep -A8 "What went wrong" build.log || true
+            exit 1
+          }
 
       - name: Find APK and rename
         run: |
           APK=$(find "$PROJECT_DIR" -type f -name "*.apk" -path "*/debug/*" ! -name "*unaligned*" | head -n 1)
           if [ -z "$APK" ]; then
             echo "APK not found"
-            find "$PROJECT_DIR" -name "*.apk"
-            exit 1
-          fi
-          echo "Found: $APK"
-          cp "$APK" "$GITHUB_WORKSPACE/LyfeStyleMusic.apk"
-          ls -lh "$GITHUB_WORKSPACE/LyfeStyleMusic.apk"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: LyfeStyleMusic-APK
-          path: LyfeStyleMusic.apk
-          if-no-files-found: error
-
-      - name: Upload build reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-reports
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/reports
-          if-no-files-found: ignore
+            find "$PROJECT
